@@ -133,11 +133,11 @@ exports.TwitterAPI.prototype._getOAuthNonce = function () {
 
 // Get OAuth Authorization Page URL
 exports.TwitterAPI.prototype.getOAuthURL = function (request_token) {
-    return OAuthBaseURL + "authenticate?oauth_token=" + request_token;
+    return "https://twitter.com/oauth/authenticate?oauth_token=" + request_token;
 }
 
 exports.TwitterAPI.prototype.getOAuthURLNew = function (request_token) {
-    return OAuthBaseURL + "authorize?oauth_token=" + request_token;
+    return "https://twitter.com/oauth/authorize?oauth_token=" + request_token;
 }
 
 // Get Request Token
@@ -153,6 +153,7 @@ exports.TwitterAPI.prototype.getRequestToken = function(callback) {
             callback(feedback.result);
             return;
         } else {
+            console.log(body);
             let result = querystring.parse(body);
             let oauth_token = result["oauth_token"];
             callback(null, oauth_token);
@@ -217,6 +218,13 @@ exports.TwitterAPI.prototype._hasError = function(err, res, body) {
         if (body == null) {
             return { hasError: true, result: err };
         }
+        try {
+            let parsed_body = JSON.parse(body);
+            if (Number(parsed_body.errors[0].code) == 32) {
+                return { hasError: true, result: parsed_body.errors[0].body }
+            }
+        } catch (e) { }
+        
         return { hasError: false, result: body };
     }
 }

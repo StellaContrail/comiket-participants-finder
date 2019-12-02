@@ -2,7 +2,9 @@ var express = require("express");
 var morgan = require("morgan");
 var cookieParser = require("cookie-parser");
 var cookieEncrypter = require("cookie-encrypter");
+var bodyParser = require('body-parser');
 var querystring = require("querystring");
+require('dotenv').config();
 var crypto = require("crypto");
 var config = require("./config");
 var twitterAPI = require("./twitter-api");
@@ -10,42 +12,41 @@ var fs = require("fs");
 var app = express();
 const consumer_key = process.env.TWITTER_TOKEN;
 const consumer_secret = process.env.TWITTER_TOKEN_SECRET;
-const callbackURL = process.env.callbackURL;
-const twitter = new twitterAPI.TwitterAPI(consumer_key, consumer_secret, callbackURL);
+const callbackURL = process.env.CALLBACK_URL_LOCAL;
+const twitter = new twitterAPI.TwitterAPI(consumer_key, consumer_secret, "http://localhost:3000/success");
 
 app.set("view engine", "ejs");
 app.use(morgan("combined"));
+app.use(bodyParser.urlencoded({extended: true}));
 app.use(cookieParser(crypto.randomBytes(256).toString('base64')));
 app.use(cookieEncrypter(crypto.randomBytes(256).toString('base64').slice(0, 32)));
+
 app.route(/^\/(index)?$/)
     .get((req, res) => {
+        console.log("ConsumerKey : " + consumer_key);
         res.render("index");
     })
     .post((req, res) => {
         twitter.getRequestToken((err, token) => {
             if (res.resolve_error(err)) { return; }
-            if (req.body["sign_in"] == "new_old" && req.signedCookies["LOGIN_INFO"]) {
-                res.redirect("/success");
-                return;
-            }
-            if (req.body["sign_in"] == "new_old" && !req.signedCookies["LOGIN_INFO"]) {
-                res.redirect(twitter.getOAuthURL(token));
-                return;
-            }
-            if (req.body["sign_in"] == "brand_new") {
-                res.redirect(twitter.getOAuthURLNew(token));
-                return;
+            if (req.body["sign_in"] == "new_old") {
+                if (req.signedCookies["LOGIN_INFO"]) {
+                    return res.redirect("/success");
+                } else {
+                    return res.redirect(twitter.getOAuthURL(token));
+                }
+            } else {
+                return res.redirect(twitter.getOAuthURLNew(token));
             }
         });
     });
 app.get("/img/bigsight.jpg", (req, res, next) => {
     res.writeHead(200, {"Content-Type":"image/jpeg"});
     fs.readFile("./views/img/bigsight.jpg", (err, data) => {
-        if (err) {
-            res.render("error", { err: err});
+        if (res.resolve_error(err)) {
             return;
         } else {
-            res.end(data);
+            return res.end(data);
         }
     });
 });
@@ -64,8 +65,7 @@ app.get("/success", (req, res, next) => {
 
         if (oauth_token && oauth_token_secret && user_id) {
         } else {
-            res.render("error", { err: "認証情報が取得できませんでした。トップページから再び認証して下さい。"});
-            return;
+            return res.render("error", { err: "認証情報が取得できませんでした。トップページから再び認証して下さい。"});
         }
 
         let usernames = {};
@@ -76,13 +76,9 @@ app.get("/success", (req, res, next) => {
         function getFriends(next_cursor_str, usernames) {
             parameters["next_cursor_str"] = next_cursor_str;
             twitter.getFriendsList(parameters, oauth_token, oauth_token_secret, (_err, _users, _next_cursor_str) => {
-                if (_err) {
-                    console.log(_err);
-                    res.render("error", { users: null, err: _err });
+                if (res.resolve_error(_err)) {
                     return;
-                } else if (_users == null) {
-                    console.log("Invalid Response from API");
-                    res.render("error", { users: null, err: "Invalid Response from API" });
+                } else if (_users == null && res.resolve_error("Invalid Response from API")) {
                     return;
                 }
                 for (var key in _users) {
@@ -106,11 +102,7 @@ app.get("/success", (req, res, next) => {
         let oauth_token = req.query.oauth_token;
         if (oauth_token && oauth_verifier) {
             twitter.getAccessToken(oauth_token, oauth_verifier, (_err, _oauth_token, _oauth_token_secret, _user_id, _screen_name) => {
-                if (_err) {
-                    console.log(_err);
-                    res.render("error", { err: _err });
-                    return;
-                }
+                if (res.resolve_error(_err)) { return; }
 
                 console.log("----------------------------------------------------------------------");
                 console.log("Twitter User \"" + _screen_name + "@" + _user_id + "\" has authorized");
@@ -119,12 +111,10 @@ app.get("/success", (req, res, next) => {
                 console.log("----------------------------------------------------------------------");
     
                 res.cookie("LOGIN_INFO", "user_id=" + _user_id + "&oauth_token=" + _oauth_token + "&oauth_token_secret=" + _oauth_token_secret, { signed: true, sameSite: 'lax' });
-                res.redirect("/success");
-                return;
+                return res.redirect("/success");
             });
         } else {
-            res.render("error", { err: "認証情報が取得できませんでした。トップページから再び認証して下さい。" });
-            return;
+            return res.render("error", { err: "認証情報が取得できませんでした。トップページから再び認証して下さい。" });
         }
     }
 });
@@ -227,17 +217,14 @@ String.prototype.kanji2num = function () {
 }
 
 // ERROR MESSAGE HANDLER
-app.use(function (req, res, next) {
-    res.resolve_error = function (err) {
-        if (err) {
-            res.render("error", err);
-            return true;
-        }
-        return false;
+express.response.resolve_error = function (err) {
+    if (err) {
+        res.render("error", { err: err });
+        return true;
     }
-});
+    return false;
+}
 
-// FOR 404 ERROR PAGE
 app.get("*", (req, res) => {
     res.status(404);
 
