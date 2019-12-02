@@ -8,9 +8,10 @@ var config = require("./config");
 var twitterAPI = require("./twitter-api");
 var fs = require("fs");
 var app = express();
-const consumer_key = process.env.TWITTERAPIKEYS.split(':')[0];
-const consumer_secret = process.env.TWITTERAPIKEYS.split(':')[1];
-var twitter = new twitterAPI.TwitterAPI(consumer_key, consumer_secret, "http://" + config.hostname + ":" + config.port + "/success");
+const consumer_key = process.env.TWITTER_TOKEN;
+const consumer_secret = process.env.TWITTER_TOKEN_SECRET;
+const callbackURL = process.env.callbackURL;
+const twitter = new twitterAPI.TwitterAPI(consumer_key, consumer_secret, callbackURL);
 
 app.set("view engine", "ejs");
 app.use(morgan("combined"));
@@ -18,14 +19,11 @@ app.use(cookieParser(crypto.randomBytes(256).toString('base64')));
 app.use(cookieEncrypter(crypto.randomBytes(256).toString('base64').slice(0, 32)));
 app.route(/^\/(index)?$/)
     .get((req, res) => {
-        res.render("index", { err: null });
+        res.render("index");
     })
     .post((req, res) => {
         twitter.getRequestToken((err, token) => {
-            if (err) {
-                res.render("error", { url: null, err: err });
-                return;
-            }
+            if (res.resolve_error(err)) { return; }
             if (req.signedCookies["LOGIN_INFO"]) {
                 res.redirect("/success");
             } else {
@@ -222,6 +220,18 @@ String.prototype.kanji2num = function () {
     return str;
 }
 
+// ERROR MESSAGE HANDLER
+app.use(function (req, res, next) {
+    res.resolve_error = function (err) {
+        if (err) {
+            res.render("error", err);
+            return true;
+        }
+        return false;
+    }
+});
+
+// FOR 404 ERROR PAGE
 app.get("*", (req, res) => {
     res.status(404);
 

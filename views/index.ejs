@@ -31,25 +31,20 @@
         <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
     </head>
     <body>
-        <% if (err) { %>
-            <h1>Error!</h1>
-            <%- err %>
-        <% } else { %>
-            <div class="vertical-center">
-                <div class="container-fluid half-transparent jumbotron shadow-lg">
-                    <h1 class="center">コミケ参加者を一挙検索するやつ</h1>
-                    <p class="lead center">あなたのフォローからコミケ参加者を一挙に検索します</p>
-                    <hr class="my-4">
-                    <h1 class="center">Comiket participants listing tool</h1>
-                    <p class="lead center">Find the Comiket participants from your following lists</p>
-                    <hr class="my-4">
-                    <p class="lead center font-weight-light">This program doesn't use any of your information other than the use of finding Comiket participants.</p>
-                    <br>
-                    <form action="./" method="POST">
-                        <button type="submit" class="btn btn-outline-primary btn-lg" value="Authorize">Sign in with Twitter</button>
-                    </form>
-                </div>
+        <div class="vertical-center">
+            <div class="container-fluid half-transparent jumbotron shadow-lg">
+                <h1 class="center">コミケ参加者を一挙検索するやつ</h1>
+                <p class="lead center">あなたのフォローからコミケ参加者を一挙に検索します</p>
+                <hr class="my-4">
+                <h1 class="center">Comiket participants listing tool</h1>
+                <p class="lead center">Find the Comiket participants from your following lists</p>
+                <hr class="my-4">
+                <p class="lead center font-weight-light">This program doesn't use any of your information other than the use of finding Comiket participants.</p>
+                <br>
+                <form action="./" method="POST">
+                    <button type="submit" class="btn btn-outline-primary btn-lg" value="Authorize">Sign in with Twitter</button>
+                </form>
             </div>
-        <% } %>
+        </div>
     </body>
 </html>
