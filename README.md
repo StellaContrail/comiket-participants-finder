@@ -4,6 +4,14 @@ Find Comiket participants from your Twitter followings.
 
 # Demo
 As this program is still in development, no recommendation for practical use for security reasons.
+#### TOP PAGE
+![TOP](./images/top.png)
+
+### RESULT PAGE
+![RESULT](./images/success.png)
+
+### ERROR PAGE
+![ERROR](./images/error.png)
 
 # Features
 Authorizes your Twitter account and fetches your followings to get possible participants who are going to Comiket.
