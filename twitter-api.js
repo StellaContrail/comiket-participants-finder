@@ -153,7 +153,6 @@ exports.TwitterAPI.prototype.getRequestToken = function(callback) {
             callback(feedback.result);
             return;
         } else {
-            console.log(body);
             let result = querystring.parse(body);
             let oauth_token = result["oauth_token"];
             callback(null, oauth_token);
