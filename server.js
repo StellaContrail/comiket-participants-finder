@@ -24,12 +24,18 @@ app.route(/^\/(index)?$/)
     .post((req, res) => {
         twitter.getRequestToken((err, token) => {
             if (res.resolve_error(err)) { return; }
-            if (req.signedCookies["LOGIN_INFO"]) {
+            if (req.body["sign_in"] == "new_old" && req.signedCookies["LOGIN_INFO"]) {
                 res.redirect("/success");
-            } else {
-                res.redirect(twitter.getOAuthURL(token));
+                return;
             }
-            return;
+            if (req.body["sign_in"] == "new_old" && !req.signedCookies["LOGIN_INFO"]) {
+                res.redirect(twitter.getOAuthURL(token));
+                return;
+            }
+            if (req.body["sign_in"] == "brand_new") {
+                res.redirect(twitter.getOAuthURLNew(token));
+                return;
+            }
         });
     });
 app.get("/img/bigsight.jpg", (req, res, next) => {

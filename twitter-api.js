@@ -133,7 +133,11 @@ exports.TwitterAPI.prototype._getOAuthNonce = function () {
 
 // Get OAuth Authorization Page URL
 exports.TwitterAPI.prototype.getOAuthURL = function (request_token) {
-    return "https://twitter.com/oauth/authenticate?oauth_token=" + request_token;
+    return OAuthBaseURL + "authenticate?oauth_token=" + request_token;
+}
+
+exports.TwitterAPI.prototype.getOAuthURLNew = function (request_token) {
+    return OAuthBaseURL + "authorize?oauth_token=" + request_token;
 }
 
 // Get Request Token
