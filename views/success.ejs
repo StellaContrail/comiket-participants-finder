@@ -33,8 +33,8 @@
                     <% for (const item of user_data) { %>
                         <tr>
                             <th scope="row"><%- ++i %></th>
-                            <td><a href=https://twitter.com/<%- item.id %>><%- item.name %></a></td>
-                            <td><a href=https://twitter.com/<%- item.id %>>@<%- item.id %></a></td>
+                            <td><a href="https://twitter.com/<%- item.id %>" target="_blank"><%- item.name %></a></td>
+                            <td><a href="https://twitter.com/<%- item.id %>" target="_blank">@<%- item.id %></a></td>
                             <td><%- item.day %></td>
                             <td><%- item.day_str %></td>
                             <td><%- item.loc_hall + ' ' + item.loc_hall_num %></td>
