@@ -4,7 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "mocha",
+    "test": "./node_modules/mocha/bin/mocha server.js --exit",
     "start": "node server.js"
   },
   "author": "",
@@ -19,6 +19,7 @@
     "ejs": "^3.0.1",
     "express": "^4.17.1",
     "helmet": "^3.21.2",
+    "mocha": "^6.2.2",
     "morgan": "^1.9.1",
     "node-twitter-api": "^1.8.0",
     "request": "^2.88.0",
