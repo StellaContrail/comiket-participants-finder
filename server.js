@@ -13,7 +13,7 @@ const app = express();
 const helmet = require("helmet");
 const consumer_key = process.env.TWITTER_TOKEN;
 const consumer_secret = process.env.TWITTER_TOKEN_SECRET;
-const callbackURL = process.env.CALLBACK_URL_LOCAL;
+const callbackURL = process.env.CALLBACK_URL;
 const twitter = new twitterAPI.TwitterAPI(consumer_key, consumer_secret, callbackURL);
 
 app.set("view engine", "ejs");
@@ -272,6 +272,6 @@ app.get("*", (req, res) => {
 });
 
 // Start listening
-app.listen(config.port, config.hostname, function () {
-    console.log("Start Listening to " + config.hostname + ":" + config.port + "\n");
+app.listen(config.port, function () {
+    console.log("Start Listening... PORT=" + config.port + "\n");
 });
