@@ -1,22 +1,34 @@
-var express = require("express");
-var morgan = require("morgan");
-var cookieParser = require("cookie-parser");
-var cookieEncrypter = require("cookie-encrypter");
-var bodyParser = require('body-parser');
-var querystring = require("querystring");
+const express = require("express");
+const morgan = require("morgan");
+const cookieParser = require("cookie-parser");
+const cookieEncrypter = require("cookie-encrypter");
+const bodyParser = require('body-parser');
+const querystring = require("querystring");
 require('dotenv').config();
-var crypto = require("crypto");
-var config = require("./config");
-var twitterAPI = require("./twitter-api");
-var fs = require("fs");
-var app = express();
+const crypto = require("crypto");
+const config = require("./config");
+const twitterAPI = require("./twitter-api");
+const fs = require("fs");
+const app = express();
+const helmet = require("helmet");
 const consumer_key = process.env.TWITTER_TOKEN;
 const consumer_secret = process.env.TWITTER_TOKEN_SECRET;
 const callbackURL = process.env.CALLBACK_URL_LOCAL;
 const twitter = new twitterAPI.TwitterAPI(consumer_key, consumer_secret, callbackURL);
 
 app.set("view engine", "ejs");
+app.use(helmet());
+
+app.use(helmet.contentSecurityPolicy({
+    directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "https://code.jquery.com/jquery-3.4.1.slim.min.js", "https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js", "https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"],
+        styleSrc: ["'self'", "https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css"]
+    }
+}));
+
 app.use(morgan("combined"));
+app.use(express.static(__dirname + "/views/static"));
 app.use(bodyParser.urlencoded({extended: true}));
 app.use(cookieParser(crypto.randomBytes(256).toString('base64')));
 app.use(cookieEncrypter(crypto.randomBytes(256).toString('base64').slice(0, 32)));
@@ -39,13 +51,12 @@ app.route(/^\/(index)?$/)
             }
         });
     });
-app.get("/img/bigsight.jpg", (req, res, next) => {
-    res.writeHead(200, { "Content-Type" : "image/jpeg" });
-    fs.readFile("./views/img/bigsight.jpg", (err, data) => {
-        if (res.resolve_error(err) == null) {
-            return res.end(data);
-        }
-    });
+
+app.post("/error", (req, res) => {
+    if (req.body["go_back"] == "true") {
+        return res.redirect("index");
+    }
+    return;
 });
 
 app.get("/success", (req, res, next) => {
@@ -79,7 +90,13 @@ app.get("/success", (req, res, next) => {
                 console.log("----------------------------------------------------------------------");
                 */
                 
-                res.cookie("LOGIN_INFO", "user_id=" + _user_id + "&oauth_token=" + _oauth_token + "&oauth_token_secret=" + _oauth_token_secret, { signed: true, sameSite: 'lax' });
+                res.cookie("LOGIN_INFO", "user_id=" + _user_id + "&oauth_token=" + _oauth_token + "&oauth_token_secret=" + _oauth_token_secret, {
+                    signed: true,
+                    sameSite: 'lax',
+                    domain: req.domain,
+                    httpOnly: true,
+                    maxAge: 1000*60*10
+                });
                 return res.redirect("/success");
             });
         } else {
