@@ -1,5 +1,6 @@
 // Load packages
 var crypto = require("crypto");
+var fetch = require("node-fetch");
 var request = require("request");
 var querystring = require("querystring");
 
@@ -45,7 +46,15 @@ exports.TwitterAPI.prototype._sendRequest = function (method, url, extra_params,
     } else {
         options["url"] = url;
     }
-    request(options, callback);
+
+    let err;
+    fetch(url, options)
+        .then(function (res) {
+            err = res.ok ? null : res.statusText;
+            return res;
+        })
+        .then(res => res.text())
+        .then(text => callback(err, text));
 }
 
 // Create HTTP Parameters from scratches
@@ -147,8 +156,8 @@ exports.TwitterAPI.prototype.getRequestToken = function(callback) {
     const target = OAuthBaseURL + command;
     const extra_params = { oauth_callback: this._callbackURL };
 
-    this._sendRequest(method, target, extra_params, null, (err, res, body) => {
-        let feedback = this._hasError(err, res, body);
+    this._sendRequest(method, target, extra_params, null, (err, body) => {
+        let feedback = this._hasError(err, body);
         if (feedback.hasError) {
             callback(feedback.result);
             return;
@@ -168,8 +177,8 @@ exports.TwitterAPI.prototype.getAccessToken = function (oauth_token, oauth_verif
     const target = OAuthBaseURL + command;
     let extra_params = { oauth_verifier: oauth_verifier, oauth_token: oauth_token };
 
-    this._sendRequest(method, target, extra_params, null, (err, res, body) => {
-        let feedback = this._hasError(err, res, body);
+    this._sendRequest(method, target, extra_params, null, (err, body) => {
+        let feedback = this._hasError(err, body);
         if (feedback.hasError) {
             callback(feedback.result);
             return;
@@ -192,8 +201,8 @@ exports.TwitterAPI.prototype.getFriendsList = function (params, oauth_token, oau
     let target = APIBaseURL + command;
     params["oauth_token"] = oauth_token;
     
-    this._sendRequest(method, target, params, oauth_token_secret, (err, res, body) => {
-        let feedback = this._hasError(err, res, body);
+    this._sendRequest(method, target, params, oauth_token_secret, (err, body) => {
+        let feedback = this._hasError(err, body);
         if (feedback.hasError) {
             callback(feedback.result);
             return;
@@ -207,7 +216,7 @@ exports.TwitterAPI.prototype.getFriendsList = function (params, oauth_token, oau
     });
 }
 
-exports.TwitterAPI.prototype._hasError = function(err, res, body) {
+exports.TwitterAPI.prototype._hasError = function(err, body) {
     if (err) {
         return { hasError: true, result: err };
     } else {
@@ -227,3 +236,4 @@ exports.TwitterAPI.prototype._hasError = function(err, res, body) {
         return { hasError: false, result: body };
     }
 }
+
