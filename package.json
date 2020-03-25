@@ -1,11 +1,11 @@
 {
-  "name": "twitterapi",
+  "name": "comiket-participants-finder",
   "version": "1.0.0",
-  "description": "",
+  "description": "Lists up all the Comiket Participants from Twitter's followings",
   "main": "server.js",
   "scripts": {
-    "test": "./node_modules/mocha/bin/mocha server.js --exit",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "./node_modules/mocha/bin/mocha server.js --exit"
   },
   "author": "",
   "license": "ISC",
