@@ -4,7 +4,9 @@
 
 Find Comiket participants from your Twitter followings.
 # Demo
-As this program is still in development, no recommendation for practical use for security reasons.
+As this program is still in development, no recommendation for practical use for security reasons. 
+( [Demo Page](https://comiket-tool.herokuapp.com/) )
+
 #### TOP PAGE
 ![TOP](./images/top.png)
 
