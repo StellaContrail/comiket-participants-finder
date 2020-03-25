@@ -4,8 +4,7 @@
   "description": "Lists up all the Comiket Participants from Twitter's followings",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "./node_modules/mocha/bin/mocha server.js --exit"
+    "start": "node server.js"
   },
   "author": "",
   "license": "ISC",
