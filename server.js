@@ -3,12 +3,10 @@ const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
 const cookieEncrypter = require("cookie-encrypter");
 const bodyParser = require('body-parser');
-const querystring = require("querystring");
 require('dotenv').config();
 const crypto = require("crypto");
 const config = require("./config");
 const twitterAPI = require("./twitter-api");
-const fs = require("fs");
 const app = express();
 const helmet = require("helmet");
 const consumer_key = process.env.TWITTER_TOKEN;
@@ -27,7 +25,7 @@ app.use(helmet.contentSecurityPolicy({
     }
 }));
 
-app.use(morgan("combined"));
+app.use(morgan("tiny"));
 app.use(express.static(__dirname + "/views/static"));
 app.use(bodyParser.urlencoded({extended: true}));
 app.use(cookieParser(crypto.randomBytes(256).toString('base64')));
@@ -37,19 +35,17 @@ app.route(/^\/(index)?$/)
     .get((req, res) => {
         res.render("index");
     })
-    .post((req, res) => {
-        twitter.getRequestToken((err, token) => {
-            if (res.resolve_error(err)) { return; }
-            if (req.body["sign_in"] == "new_old") {
-                if (req.signedCookies["LOGIN_INFO"]) {
-                    return res.redirect("/success");
-                } else {
-                    return res.redirect(twitter.getOAuthURL(token));
-                }
-            } else {
-                return res.redirect(twitter.getOAuthURLNew(token));
+    .post((req, res, next) => {
+        (async () => {
+            const oauthRequestToken = await twitter.getRequestToken();
+
+            switch (req.body["sign_in"]) {
+                case "old":
+                    return res.redirect(twitter.getOAuthURL(oauthRequestToken.oauthToken));
+                case "new":
+                    return res.redirect(twitter.getOAuthURLNew(oauthRequestToken.oauthToken));
             }
-        });
+        })().catch(next);
     });
 
 app.post("/error", (req, res) => {
@@ -59,124 +55,89 @@ app.post("/error", (req, res) => {
     return;
 });
 
-app.get("/success", (req, res, next) => {
-    // For those from /success.ejs
-    let cookie = req.signedCookies["LOGIN_INFO"];
-    let session = loadFromCookie(cookie);
-
-    // Check if session is alive
-    if (session) {
-        fetchAllFollowingUsernames(session, res, (err, usernames) => {
-            if (usernames == null || err) {
-                res.render("error", { err: err });
-                return;
-            }
-            usernames = collectOnlyParticipantsFrom(usernames);
-            let data = deduceLocationsFrom(usernames);
-            res.render("success", { user_data: data });
-        });
-    } else {
+app.get("/login_success", (req, res, next) => {
+    (async () => {
         let oauth_verifier = req.query.oauth_verifier;
         let oauth_token = req.query.oauth_token;
-        if (oauth_token && oauth_verifier) {
-            twitter.getAccessToken(oauth_token, oauth_verifier, (_err, _oauth_token, _oauth_token_secret, _user_id, _screen_name) => {
-                if (res.resolve_error(_err)) { return; }
+        let session = {
+            oauthToken: "",
+            oauthTokenSecret: "",
+            userId: "",
+            screenName: ""
+        }
+        
+        const isParametersValid = (oauth_verifier && oauth_token);
+        if (isParametersValid) {
+            session = await twitter.getAccessToken(oauth_token, oauth_verifier);
 
-                /*  For debug only
-                console.log("----------------------------------------------------------------------");
-                console.log("Twitter User \"" + _screen_name + "@" + _user_id + "\" has authorized");
-                console.log("TOKEN  : " + _oauth_token);
-                console.log("SECRET : " + _oauth_token_secret);
-                console.log("----------------------------------------------------------------------");
-                */
-                
-                res.cookie("LOGIN_INFO", "user_id=" + _user_id + "&oauth_token=" + _oauth_token + "&oauth_token_secret=" + _oauth_token_secret, {
-                    signed: true,
-                    sameSite: 'lax',
-                    domain: req.domain,
-                    httpOnly: true,
-                    maxAge: 1000*60*10
-                });
-                return res.redirect("/success");
-            });
+            //  For debug only
+            /*
+            console.log("[DEBUG] Login_Success");
+            console.log("User        : " + session.screenName + "@" + session.userId);
+            console.log("Token       : " + session.oauthToken);
+            console.log("SecretToken : " + session.oauthTokenSecret);
+            console.log("---------------------");
+            */
+            //
+        
         } else {
             if (res.resolve_error("認証情報が取得できませんでした。トップページから再び認証して下さい。")) { return; }
         }
-    }
+        
+        let users = await getFollowings(session);
+        users = filterEntries(users);
+        let userData = getDesks(users);
+        res.render("result", { user_data: userData, comiket: { name: config.comiket_name } });
+
+    })().catch(next);
 });
 
 // Fetch all followings' usernames
-function fetchAllFollowingUsernames(session, res, callback) {
-    let usernames = {};
-    let next_cursor_str = "-1";
-    let parameters = { user_id: session.user_id, count: 200, skip_status: true, include_user_entities: false };
-    getFriendsRequest(next_cursor_str, usernames);
+async function getFollowings(session) {
+    let params = { user_id: session.userId, count: 200, skip_status: true, include_user_entities: false, cursor: -1 };
+    let users = new Map();
 
-    function getFriendsRequest(next_cursor_str, usernames) {
-        parameters["next_cursor_str"] = next_cursor_str;
-        twitter.getFriendsList(parameters, session.oauth_token, session.oauth_token_secret, (_err, _users, _next_cursor_str) => {
-            if (_users == null) { _err = "Invalid Response from API"; }
-            if (res.resolve_error(_err)) { callback("Something went wrong while processing your following data", null) }
-            for (const user of _users) {
-                usernames[user.screen_name] = user.name;
-            }
-            next_cursor_str = _next_cursor_str;
-            if (next_cursor_str == 0) {
-                callback(null, usernames);
-            } else {
-                // if there is more followings to be read, call getFriendsRequest recursively.
-                getFriendsRequest(next_cursor_str, usernames);
-            }
-        });
+    while (params.cursor != 0) {
+        const result = await twitter.getFriendsList(params, session);
+        if (result.users == null) {
+            throw new Error("Invalid Response from API " + result.err);
+        }
+        for (const user of result.users) {
+            users[user.screen_name] = user.name;
+        }
+        params.cursor = result.next_cursor_str;
     }
+    return users;
 }
 
-// Collect only participants from the fetched usernames
-function collectOnlyParticipantsFrom(usernames) {
+// Collect entries
+function filterEntries(usernames) {
     let participants_usernames = {};
-    for (const [id, username] of Object.entries(usernames)) {
-        if (isParticipating(username)) {
-            participants_usernames[id] = username;
+    for (const [screen_name, name] of Object.entries(usernames)) {
+        if (isParticipating(name)) {
+            participants_usernames[screen_name] = name;
         }
     }
     return participants_usernames;
 }
 
-// Load session data from the given cookie
-function loadFromCookie(cookie)
-{
-    // Signed cookie has not been verified
-    if (cookie == false) {
-        return null;
-    }
-    let parsed_cookie = querystring.parse(cookie);
-    let user_id = parsed_cookie["user_id"];
-    let oauth_token = parsed_cookie["oauth_token"];
-    let oauth_token_secret = parsed_cookie["oauth_token_secret"];
-    // Some parameters are not set
-    if (oauth_token == null || oauth_token_secret == null || user_id == null) {
-        return null;
-    }
-    // Successfully fetched all cookie data
-    return { user_id: user_id, oauth_token: oauth_token, oauth_token_secret: oauth_token_secret };
-}
-
 // Create another array with participants usernames
 // The given usernames in the parameters should be only the participants'
-function deduceLocationsFrom(usernames) {
+function getDesks(usernames) {
     let users_data = [];
     for (const [id, username] of Object.entries(usernames)) {
         let formattedUsername = formatUsernameFrom(username);
-        let user_data = formattedUsername.match(/([1-4])?(?:日|日目)?([月火水木金土日]?)([西南])(\d?)([あ-んア-ンa-z])-?(\d{2})(a|b|ab)?/);
+        // Need to store this expression in config.js
+        let user_data = formattedUsername.match(/([1-4])?(?:日|日目)?([月火水木金土日]?)([西南])(\d?)([あ-んア-ンa-z])-?(\d{2})(a|b|ab)?/) || "";
         users_data.push({
             id: id,
             name: username,
-            day: user_data[1] ? user_data[1] : 100,
-            day_str: user_data[2] ? user_data[2] : "-",
-            loc_hall: (user_data[3] ? user_data[3] : ""),
-            loc_hall_num: (user_data[4] ? user_data[4] : 100),
-            loc_block: user_data[5] ? user_data[5] : "-",
-            loc_desk: (user_data[6] ? user_data[6] : "") + (user_data[7] ? user_data[7] : "")
+            day: user_data[1] || 100,
+            day_str: user_data[2] || "-",
+            loc_hall: (user_data[3] || ""),
+            loc_hall_num: (user_data[4] || 100),
+            loc_block: user_data[5] || "-",
+            loc_desk: (user_data[6] || "") + (user_data[7] || "")
         });
     }
     // Sort users_data
@@ -219,18 +180,18 @@ function deduceLocationsFrom(usernames) {
 
 // Test if a user with the username is participating Comiket
 function isParticipating(username) {
-    return config.regex_comiket.test(formatUsernameFrom(username));
+    return config.regex_comiket.test(formatUsernameFrom(username)) || (username.indexOf(config.comiket_name) > -1);
 }
 
 // Format participants' usernames
 function formatUsernameFrom(username) {
     return username
-        .toLowerCase()       // Change upper case to lower case
-        .replace(/\s+/g, "") // Remove all spaces
-        .replace(/[()（）【】「」『』]/g, "")  // Remove all brackets
-        .kanji2num()       // Change all kanji numerals to arabic ones
-        .replace(/[Ａ-Ｚａ-ｚ０-９]/g, function (s) { return String.fromCharCode(s.charCodeAt(0) - 65248); }) // Change full width words into half ones
-        .replace(config.comiket_name, ""); // Remove Comiket name
+        .toLowerCase()                                  // Change upper case to lower case
+        .replace(/\s+/g, "")                            // Remove all spaces
+        .replace(/[()（）【】「」『』]/g, "")            // Remove all brackets
+        .kanji2num()                                    // Change all kanji numerals to arabic ones
+        .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => { return String.fromCharCode(s.charCodeAt(0) - 65248); }) // Change full width words into half ones
+        .replace(config.comiket_name, "");              // Remove Comiket name
 }
 
 

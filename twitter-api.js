@@ -1,7 +1,8 @@
 // Load packages
 var crypto = require("crypto");
+const { query } = require("express");
 var fetch = require("node-fetch");
-var request = require("request");
+const { encode } = require("punycode");
 var querystring = require("querystring");
 
 const OAuthBaseURL = "https://api.twitter.com/oauth/";
@@ -15,75 +16,107 @@ exports.TwitterAPI = function(consumer_key, consumer_secret, callbackURL) {
     return this;
 }
 
-exports.TwitterAPI.prototype._sendRequest = function (method, url, extra_params, oauth_token_secret, callback) {
+exports.TwitterAPI.prototype._sendRequest = async function (method, baseURL, extraParams, oauthToken, oauthTokenSecret) {
+    /*
+        let header = this.createHeader(method, baseURL, extraParams, oauthToken, oauthTokenSecret);
+        let signature = this.createSignature();
+        let url = this.createURL(baseURL, extraParams);
+    */
+
     // Collecting parameters
-    let parameters = this._createParameters(extra_params);
-    let encoded_parameters = this._encodeURIParameters(parameters);
-    let sorted_parameters = this._sortParameters(encoded_parameters);
-    // Create the signature base string
-    let base_string = this._createBaseString(sorted_parameters, method, url);
-    // Get a signing key
-    let signing_key = "";
-    if (oauth_token_secret) {
-        signing_key = this._createSigningKey(oauth_token_secret);
-    } else {
-        signing_key = this._createSigningKey("");
-    }
-    // Calc the signature
-    let signature = this._hash_hmac(base_string, signing_key);
-    // Build the header string
-    let headers = {
-        "Authorization": this._createAuthHeaders(parameters, signature)
-    };
+    let params = this._createParameters(oauthToken);
+    params.oauth_signature = this._createSignature(method, baseURL, params, extraParams, this._consumer_secret, oauthTokenSecret);
+    let headers = this._createHeader(params);
     // HTTP Options
     let options = {
         method: method,
         headers: headers
     };
-    var queries_str = querystring.stringify(extra_params);
-    if (queries_str) {
-        options["url"] = url + '?' + queries_str;
-    } else {
-        options["url"] = url;
-    }
+    let url = this._createURL(baseURL, extraParams);
+    options["url"] = url;
 
-    let err;
-    fetch(url, options)
-        .then(function (res) {
-            err = res.ok ? null : res.statusText;
-            return res;
-        })
-        .then(res => res.text())
-        .then(text => callback(err, text));
+    const res = await fetch(url, options);
+    const data = await res.text();
+    console.log("[DEBUG] SendRequest()");
+    console.log(url);
+    console.log(options);
+    console.log(res.ok);
+    console.log(data);
+    console.log("---------------------");
+    return { status: res.ok, data: data };
 }
 
-// Create HTTP Parameters from scratches
-exports.TwitterAPI.prototype._createParameters = function(extra_params) {
-    let parameters = {
+this.TwitterAPI.prototype._createURL = function (baseURL, extraParams) {
+    let str = querystring.stringify(extraParams);
+    if (str) {
+        return (baseURL + '?' + str);
+    } else {
+        return baseURL;
+    }
+}
+
+exports.TwitterAPI.prototype._createParameters = function(oauthToken) {
+    let params = {
         oauth_consumer_key: this._consumer_key,
         oauth_nonce: this._getOAuthNonce(),
+        //oauth_signature: SIGNATURE,
+        //oauth_token: TOKEN,
         oauth_signature_method: "HMAC-SHA1",
         oauth_timestamp: this._getTimestamp(),
-        oauth_version: "1.0A"
+        oauth_version: "1.0"
     };
-    return Object.assign(parameters, extra_params);
+    if (oauthToken) {
+        params.oauth_token = oauthToken;
+    }
+    return params;
 }
 
-// Get UTC Timestamp in seconds
+function escape(str) {
+    return encodeURIComponent(str).replace(/[!*()']/g, (c) => { return '%' + c.charCodeAt(0).toString(16); });
+}
+
+function concat(array1, array2) {
+    let array = Object.assign({}, array1);
+    array = Object.assign(array, array2);
+    return array;
+}
+
+exports.TwitterAPI.prototype._createHeader = function(params) {
+    let DST = 'OAuth ';
+    for (const [key, value] of Object.entries(params)) {
+        DST += escape(key) + '="' + escape(value) + '", ';
+    }
+    DST = DST.slice(0, -2);
+    return { "Authorization": DST };
+}
+
+
+exports.TwitterAPI.prototype._createSignature = function (method, url, params, extraParams, consumerSecret, oauthTokenSecret) {
+    let parameter = concat(params, extraParams);
+    parameter = this._encodeURIParameters(parameter);
+    parameter = this._sortParameters(parameter);
+    let paramStr = "";
+    for (const [key, value] of Object.entries(parameter)) {
+        paramStr += key + "=" + value + "&";
+    }
+    paramStr = paramStr.slice(0, -1);
+    let baseStr = method.toUpperCase() + "&" + escape(url) + "&" + escape(paramStr);
+    let signingKey = escape(consumerSecret) + "&" + escape(oauthTokenSecret);
+    return this._hash_hmac(baseStr, signingKey);
+}
+
 exports.TwitterAPI.prototype._getTimestamp = function() {
     return Math.floor(new Date().getTime() / 1000);
 }
 
-// encodeURIComponent key and value of each associative array element
 exports.TwitterAPI.prototype._encodeURIParameters = function(parameters) {
     let encoded_items = {};
     for (const [key, value] of Object.entries(parameters)) {
-        encoded_items[encodeURIComponent(key)] = encodeURIComponent(value);
+        encoded_items[escape(key)] = escape(value);
     }
     return encoded_items;
 }
 
-// Sort HTTP Parameters
 exports.TwitterAPI.prototype._sortParameters = function (parameters) {
     let keys = Object.keys(parameters);
     keys.sort();
@@ -94,43 +127,12 @@ exports.TwitterAPI.prototype._sortParameters = function (parameters) {
     return sorted_parameters;
 }
 
-// Create base string
-exports.TwitterAPI.prototype._createBaseString = function (parameters, method, target) {
-    let param_str = "";
-    for (const [key, value] of Object.entries(parameters)) {
-        param_str += key + "=" + value + "&";
-    }
-    param_str = param_str.slice(0, -1);
-    let base_string = method + "&" + encodeURIComponent(target) + "&" + encodeURIComponent(param_str);
-    return base_string;
-}
-
-// Create signing key
-exports.TwitterAPI.prototype._createSigningKey = function (token_secret) {
-    return encodeURIComponent(this._consumer_secret) + "&" + encodeURIComponent(token_secret);
-}
-
-// Encrypt signing key with HMAC-SHA1
 exports.TwitterAPI.prototype._hash_hmac = function(base_string, signing_key) {
     let hmac = crypto.createHmac("sha1", signing_key);
     hmac.update(base_string);
     return hmac.digest("base64");
 }
 
-// Create Authorization header
-exports.TwitterAPI.prototype._createAuthHeaders = function(parameters, signature) {
-    parameters["oauth_signature"] = signature;
-    let auth_header_str = "OAuth ";
-
-    // Order of the array doesn't matter
-    for (const [key, value] of Object.entries(parameters)) {
-        auth_header_str += encodeURIComponent(key) + "=" + "\"" + encodeURIComponent(value) + "\", ";
-    }
-    auth_header_str = auth_header_str.slice(0, -2);
-    return auth_header_str;
-}
-
-// Get OAuth Nonce
 exports.TwitterAPI.prototype._getOAuthNonce = function () {
     const series = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let result = "";
@@ -140,7 +142,11 @@ exports.TwitterAPI.prototype._getOAuthNonce = function () {
     return result;
 }
 
-// Get OAuth Authorization Page URL
+/* 
+    This method differs from GET oauth / authorize in that if the user has already granted the application permission, 
+    the redirect will occur without the user having to re-approve the application. 
+    To realize this behavior, you must enable the Use Sign in with Twitter setting on your application record.
+*/
 exports.TwitterAPI.prototype.getOAuthURL = function (request_token) {
     return "https://twitter.com/oauth/authenticate?oauth_token=" + request_token;
 }
@@ -150,70 +156,56 @@ exports.TwitterAPI.prototype.getOAuthURLNew = function (request_token) {
 }
 
 // Get Request Token
-exports.TwitterAPI.prototype.getRequestToken = function(callback) {
-    const command = "request_token";
+exports.TwitterAPI.prototype.getRequestToken = async function() {
     const method = "POST";
+    const command = "request_token";
     const target = OAuthBaseURL + command;
     const extra_params = { oauth_callback: this._callbackURL };
 
-    this._sendRequest(method, target, extra_params, null, (err, body) => {
-        let feedback = this._hasError(err, body);
-        if (feedback.hasError) {
-            callback(feedback.result);
-            return;
-        } else {
-            let result = querystring.parse(body);
-            let oauth_token = result["oauth_token"];
-            callback(null, oauth_token);
-            return;
-        }
-    });
+    const res = await this._sendRequest(method, target, extra_params, "", "");
+    let result = querystring.parse(res.data);
+    let oauthToken = result["oauth_token"];
+    return { oauthToken: oauthToken };
 }
 
 // Get Access Token
-exports.TwitterAPI.prototype.getAccessToken = function (oauth_token, oauth_verifier, callback) {
+exports.TwitterAPI.prototype.getAccessToken = async function (oauthToken, oauthVerifier) {
     const method = "POST";
     const command = "access_token";
     const target = OAuthBaseURL + command;
-    let extra_params = { oauth_verifier: oauth_verifier, oauth_token: oauth_token };
+    let extraParams = { oauth_verifier: oauthVerifier, oauth_token: oauthToken };
 
-    this._sendRequest(method, target, extra_params, null, (err, body) => {
-        let feedback = this._hasError(err, body);
-        if (feedback.hasError) {
-            callback(feedback.result);
-            return;
-        } else {
-            let result = querystring.parse(body);
-            let oauth_token = result["oauth_token"];
-            let oauth_token_secret = result["oauth_token_secret"];
-            let user_id = result["user_id"];
-            let screen_name = result["screen_name"];
-            callback(null, oauth_token, oauth_token_secret, user_id, screen_name);
-            return;
-        }
-    });
+    const res = await this._sendRequest(method, target, extraParams, oauthToken, "");
+    let result = querystring.parse(res.data);
+    let token = result["oauth_token"];
+    let tokenSecret = result["oauth_token_secret"];
+    let userId = result["user_id"];
+    let screenName = result["screen_name"];
+    return { oauthToken: token, oauthTokenSecret: tokenSecret, userId: userId, screenName: screenName };
 }
 
 // Get Friends (following) list
-exports.TwitterAPI.prototype.getFriendsList = function (params, oauth_token, oauth_token_secret, callback) {
-    const command = "friends/list.json";
+exports.TwitterAPI.prototype.getFriendsList = async function (params, session) {
     const method = "GET";
+    const command = "friends/list.json";
     let target = APIBaseURL + command;
-    params["oauth_token"] = oauth_token;
+    params["oauth_token"] = session.oauthToken;
+
+    const res = await this._sendRequest(method, target, params, session.oauthToken, session.oauthTokenSecret);
+    let result = JSON.parse(res.data);
+    return { users: result.users, next_cursor_str: result.next_cursor_str };
+}
+
+// Get Timeline
+exports.TwitterAPI.prototype.getTimeline = async function (params, session) {
+    const method = "GET";
+    const command = "statuses/home_timeline.json";
+    let target = APIBaseURL + command;
+    params["oauth_token"] = session.oauthToken;
     
-    this._sendRequest(method, target, params, oauth_token_secret, (err, body) => {
-        let feedback = this._hasError(err, body);
-        if (feedback.hasError) {
-            callback(feedback.result);
-            return;
-        } else {
-            let result = JSON.parse(body);
-            let users = result.users;
-            let next_cursor_str = result.next_cursor_str;
-            callback(null, users, next_cursor_str);
-            return;
-        }
-    });
+    const res = await this._sendRequest(method, target, params, session.oauthToken, session.oauthTokenSecret);
+    let result = JSON.parse(res.data);
+    return { result: result };
 }
 
 exports.TwitterAPI.prototype._hasError = function(err, body) {
