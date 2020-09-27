@@ -1,8 +1,6 @@
 // Load packages
 var crypto = require("crypto");
-const { query } = require("express");
 var fetch = require("node-fetch");
-const { encode } = require("punycode");
 var querystring = require("querystring");
 
 const OAuthBaseURL = "https://api.twitter.com/oauth/";

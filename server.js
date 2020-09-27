@@ -1,10 +1,7 @@
 const express = require("express");
 const morgan = require("morgan");
-const cookieParser = require("cookie-parser");
-const cookieEncrypter = require("cookie-encrypter");
 const bodyParser = require('body-parser');
 require('dotenv').config();
-const crypto = require("crypto");
 const config = require("./config");
 const twitterAPI = require("./twitter-api");
 const app = express();
@@ -28,8 +25,6 @@ app.use(helmet.contentSecurityPolicy({
 app.use(morgan("tiny"));
 app.use(express.static(__dirname + "/views/static"));
 app.use(bodyParser.urlencoded({extended: true}));
-app.use(cookieParser(crypto.randomBytes(256).toString('base64')));
-app.use(cookieEncrypter(crypto.randomBytes(256).toString('base64').slice(0, 32)));
 
 app.route(/^\/(index)?$/)
     .get((req, res) => {
